@@ -12,6 +12,18 @@ from app.modules.ai.tools.create_transaction.definition import (
 from app.modules.ai.tools.create_transaction.handler import (
     execute_create_transaction,
 )
+from app.modules.ai.tools.delete_transaction.definition import (
+    DELETE_TRANSACTION_TOOL,
+)
+from app.modules.ai.tools.delete_transaction.handler import (
+    execute_delete_transaction,
+)
+from app.modules.ai.tools.update_transaction.definition import (
+    UPDATE_TRANSACTION_TOOL,
+)
+from app.modules.ai.tools.update_transaction.handler import (
+    execute_update_transaction,
+)
 from app.modules.transactions.service_layer.transaction_service import (
     FinancialAccountService,
     TransactionService,
@@ -53,6 +65,8 @@ class FinanceOrchestrator:
         ],
         tools=[
             CREATE_TRANSACTION_TOOL,
+            UPDATE_TRANSACTION_TOOL,
+            DELETE_TRANSACTION_TOOL,
         ],
     )
 
@@ -74,15 +88,6 @@ class FinanceOrchestrator:
         tool_call = tool_calls[0]
         tool_name = tool_call.function.name
 
-        if tool_name != "create_transaction":
-            return {
-                "success": False,
-                "route": "blocked",
-                "message": f"Tool '{tool_name}' tidak diizinkan.",
-                "tool_name": tool_name,
-                "data": None,
-            }
-
         try:
             arguments = json.loads(
                 tool_call.function.arguments
@@ -99,13 +104,38 @@ class FinanceOrchestrator:
                 "data": None,
             }
 
-        result = execute_create_transaction(
-            arguments=arguments,
-            user_id=user_id,
-            transaction_service=self.transaction_service,
-            account_service=self.account_service,
-            category_service=self.category_service,
-        )
+        if tool_name == "create_transaction":
+            result = execute_create_transaction(
+                arguments=arguments,
+                user_id=user_id,
+                transaction_service=self.transaction_service,
+                account_service=self.account_service,
+                category_service=self.category_service,
+            )
+        elif tool_name == "update_transaction":
+            result = execute_update_transaction(
+                arguments=arguments,
+                user_id=user_id,
+                transaction_service=self.transaction_service,
+                account_service=self.account_service,
+                category_service=self.category_service,
+            )
+        elif tool_name == "delete_transaction":
+            result = execute_delete_transaction(
+                arguments=arguments,
+                user_id=user_id,
+                transaction_service=self.transaction_service,
+                account_service=self.account_service,
+                category_service=self.category_service,
+            )
+        else:
+            return {
+                "success": False,
+                "route": "blocked",
+                "message": f"Tool '{tool_name}' tidak diizinkan.",
+                "tool_name": tool_name,
+                "data": None,
+            }
 
         return {
             "route": "tool",
@@ -127,9 +157,11 @@ Zona waktu pengguna: Asia/Jakarta.
 
 Tugas:
 1. Pahami pesan pengguna.
-2. Gunakan create_transaction jika pengguna telah melakukan pengeluaran.
-3. Jangan mengatakan transaksi berhasil sebelum tool selesai dijalankan.
-4. Jangan mengarang nama akun.
+2. Gunakan create_transaction jika pengguna ingin mencatat transaksi baru.
+3. Gunakan update_transaction jika pengguna ingin mengubah transaksi yang sudah ada.
+4. Gunakan delete_transaction jika pengguna ingin menghapus, membatalkan, atau undo transaksi.
+5. Jangan mengatakan transaksi berhasil sebelum tool selesai dijalankan.
+6. Jangan mengarang nama akun.
 
 Aturan:
 - "30 ribu" berarti 30000.
@@ -139,5 +171,9 @@ Aturan:
 - "makan" masuk kategori Makanan.
 - Jika nominal tidak disebutkan, tanyakan nominal.
 - Jika akun tidak disebutkan, tanyakan nama akun.
+- Untuk update/delete, pakai transaction_id jika diberikan pengguna.
+- Jika tidak ada transaction_id, pakai kombinasi nominal, akun, kategori, dan tanggal untuk mencari transaksi target.
+- Jika pengguna memakai koreksi lanjutan seperti "ternyata harganya 10rb", "salah, harusnya 10rb", atau "ubah jadi 10rb" tanpa menyebut target, gunakan update_transaction untuk transaksi terakhir.
+- Jika target transaksi tidak unik, minta klarifikasi.
 - Jangan memanggil tool untuk pertanyaan, simulasi, atau contoh.
 """.strip()

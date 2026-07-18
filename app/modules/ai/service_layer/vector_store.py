@@ -16,6 +16,21 @@ class VectorStore:
             embeddings=embeddings,
             ids=ids
         )
+
+    def upsert_document(
+            self,
+            documents: list[str],
+            embeddings: list[list[float]],
+            ids: list[str]
+    ):
+        self.collection.upsert(
+            documents=documents,
+            embeddings=embeddings,
+            ids=ids
+        )
+
+    def delete_document(self, ids: list[str]):
+        self.collection.delete(ids=ids)
     
     def search (self, query_embedding: list[float], n_results: int = 5) -> list[dict]:
         results = self.collection.query(

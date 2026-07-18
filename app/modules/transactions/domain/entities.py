@@ -94,6 +94,13 @@ class TransactionCreate(BaseModel):
     transaction_date: Optional[date] = None
 
 
+class TransactionUpdate(BaseModel):
+    category_id: Optional[int] = None
+    from_account_id: Optional[int] = None
+    amount: Optional[Decimal] = Field(default=None, gt=0)
+    transaction_date: Optional[date] = None
+
+
 class TransactionResponse(BaseModel):
     id: int
     user_id: int

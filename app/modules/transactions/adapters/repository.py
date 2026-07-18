@@ -125,11 +125,87 @@ class TransactionRepository:
             .first()
         )
 
+    def get_by_id_and_user_id(
+        self,
+        transaction_id: int,
+        user_id: int,
+    ):
+        return (
+            self.db.query(TransactionORM)
+            .filter(
+                TransactionORM.id == transaction_id,
+                TransactionORM.user_id == user_id,
+            )
+            .first()
+        )
+
+    def get_latest_by_user_id(self, user_id: int):
+        return (
+            self.db.query(TransactionORM)
+            .filter(TransactionORM.user_id == user_id)
+            .order_by(
+                TransactionORM.transaction_date.desc(),
+                TransactionORM.id.desc(),
+            )
+            .first()
+        )
+
+    def find_candidates(
+        self,
+        *,
+        user_id: int,
+        amount=None,
+        transaction_date=None,
+        from_account_id=None,
+        category_id=None,
+        limit: int = 10,
+    ):
+        query = self.db.query(TransactionORM).filter(
+            TransactionORM.user_id == user_id
+        )
+
+        if amount is not None:
+            query = query.filter(TransactionORM.amount == amount)
+
+        if transaction_date is not None:
+            query = query.filter(
+                TransactionORM.transaction_date == transaction_date
+            )
+
+        if from_account_id is not None:
+            query = query.filter(
+                TransactionORM.from_account_id == from_account_id
+            )
+
+        if category_id is not None:
+            query = query.filter(
+                TransactionORM.category_id == category_id
+            )
+
+        return (
+            query.order_by(TransactionORM.transaction_date.desc(), TransactionORM.id.desc())
+            .limit(limit)
+            .all()
+        )
+
     def create(self, data: dict):
         transaction = TransactionORM(**data)
         self.db.add(transaction)
         self.db.commit()
         self.db.refresh(transaction)
+        return transaction
+
+    def update(self, transaction: TransactionORM, data: dict):
+        for key, value in data.items():
+            setattr(transaction, key, value)
+
+        self.db.commit()
+        self.db.refresh(transaction)
+        return transaction
+
+    def delete(self, transaction: TransactionORM):
+        self.db.delete(transaction)
+        self.db.commit()
         return transaction
 
 

@@ -1,5 +1,6 @@
 from app.modules.ai.service_layer.embedding_service import EmbeddingService
 from app.modules.ai.service_layer.vector_store import VectorStore
+from app.modules.transactions.adapters.orm import TransactionORM
 from app.modules.transactions.adapters.repository import (
     FinancialAccountRepository,
     TransactionRepository,
@@ -7,6 +8,7 @@ from app.modules.transactions.adapters.repository import (
     TransactionEmbeddingRepository
 )
 from datetime import date
+from app.modules.transactions.domain.entities import TransactionUpdate
 
 
 class TransactionCategoryService:
@@ -160,6 +162,15 @@ class TransactionService:
         self.vector_store = vector_store
         self.embedding_service = embedding_service
 
+    @staticmethod
+    def _build_transaction_document(transaction: TransactionORM) -> str:
+        return (
+            f"Tanggal {transaction.transaction_date}, "
+            f"user melakukan {transaction.type} sebesar {transaction.amount}. "
+            f"Dari akun {transaction.from_account_id}. "
+            f"Kategori {transaction.category_id}."
+        )
+
     def create_transaction(self, data):
         category = self.category_repo.get_by_id(data.category_id)
         if not category:
@@ -180,13 +191,7 @@ class TransactionService:
 
         transaction = self.transaction_repo.create(payload)
 
-        document = (
-            f"Tanggal {transaction.transaction_date}, "
-            f"user melakukan {transaction.type} sebesar {transaction.amount}. "
-            f"Judul: {getattr(transaction, 'title', '-') or '-'}. "
-            f"Deskripsi: {getattr(transaction, 'description', '-') or '-'}."
-        )
-
+        document = self._build_transaction_document(transaction)
         embedding = self.embedding_service.embed(document)
 
         self.vector_store.add_document(
@@ -196,4 +201,88 @@ class TransactionService:
         )
 
         return transaction
-    
+
+    def get_transaction_by_id(
+        self,
+        transaction_id: int,
+        user_id: int,
+    ):
+        transaction = self.transaction_repo.get_by_id_and_user_id(
+            transaction_id=transaction_id,
+            user_id=user_id,
+        )
+        if not transaction:
+            raise ValueError("Transaction not found")
+        return transaction
+
+    def get_latest_transaction(self, user_id: int):
+        transaction = self.transaction_repo.get_latest_by_user_id(
+            user_id=user_id,
+        )
+        if not transaction:
+            raise ValueError("Transaction not found")
+        return transaction
+
+    def find_transactions(
+        self,
+        *,
+        user_id: int,
+        amount=None,
+        transaction_date=None,
+        from_account_id=None,
+        category_id=None,
+        limit: int = 10,
+    ):
+        return self.transaction_repo.find_candidates(
+            user_id=user_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            from_account_id=from_account_id,
+            category_id=category_id,
+            limit=limit,
+        )
+
+    def update_transaction(
+        self,
+        transaction_id: int,
+        user_id: int,
+        data: TransactionUpdate,
+    ):
+        transaction = self.get_transaction_by_id(transaction_id, user_id)
+
+        update_data = data.model_dump(exclude_unset=True)
+
+        if "category_id" in update_data and update_data["category_id"] is not None:
+            category = self.category_repo.get_by_id(update_data["category_id"])
+            if not category:
+                raise ValueError("Transaction category not found")
+            update_data["type"] = category.type
+
+        if "from_account_id" in update_data and update_data["from_account_id"] is not None:
+            account = self.account_repo.get_by_id(update_data["from_account_id"])
+            if not account:
+                raise ValueError("Financial account not found")
+            if account.user_id != user_id:
+                raise ValueError("Financial account does not belong to this user")
+
+        transaction = self.transaction_repo.update(transaction, update_data)
+
+        document = self._build_transaction_document(transaction)
+        embedding = self.embedding_service.embed(document)
+        self.vector_store.upsert_document(
+            documents=[document],
+            embeddings=[embedding],
+            ids=[f"transaction-{transaction.id}"],
+        )
+
+        return transaction
+
+    def delete_transaction(
+        self,
+        transaction_id: int,
+        user_id: int,
+    ):
+        transaction = self.get_transaction_by_id(transaction_id, user_id)
+        deleted = self.transaction_repo.delete(transaction)
+        self.vector_store.delete_document([f"transaction-{transaction_id}"])
+        return deleted
