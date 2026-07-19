@@ -36,8 +36,48 @@ Prefix: `/users`
 Catatan:
 
 - Password disimpan sebagai `password_hash`.
-- Belum ada route login/token.
 - Route user saat ini belum diproteksi auth.
+
+## Auth
+
+Prefix: `/auth`
+
+| Method | Path | Fungsi |
+| --- | --- | --- |
+| POST | `/auth/login` | Login user dan generate access token. |
+| GET | `/auth/me` | Ambil user dari Bearer token aktif. |
+
+Contoh request login:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password"
+}
+```
+
+Contoh response login:
+
+```json
+{
+  "access_token": "jwt-token",
+  "token_type": "bearer",
+  "expires_in": 3600,
+  "user": {
+    "id": 1,
+    "full_name": "User",
+    "email": "user@example.com",
+    "role": "user",
+    "status": "active"
+  }
+}
+```
+
+Gunakan token untuk endpoint yang diproteksi:
+
+```text
+Authorization: Bearer <access_token>
+```
 
 ## Transaction Categories
 
@@ -93,8 +133,7 @@ User message
 
 Catatan:
 
-- Endpoint AI saat ini memakai `current_user_id = 1`.
-- Belum memakai auth user aktual.
+- Endpoint AI memakai auth user aktual dari Bearer token.
 - Belum ada route `/ai/ask`; route aktif adalah `/ai/chat`.
 - RAG indexing sudah ada melalui `EmbeddingService` dan `VectorStore`, tetapi flow tanya-jawab RAG belum menjadi route khusus.
 
@@ -104,7 +143,6 @@ Route berikut belum aktif di kode saat ini, tetapi service layer sudah mengarah 
 
 | Method | Path | Kebutuhan |
 | --- | --- | --- |
-| POST | `/auth/login` | Login user dan generate token. |
 | GET | `/transactions` | List transaksi. |
 | GET | `/transactions/{transaction_id}` | Detail transaksi. |
 | PUT | `/transactions/{transaction_id}` | Update transaksi via REST. |

@@ -15,6 +15,7 @@ from app.modules.transactions.entrypoints.api import (
     get_transaction_category_service,
     get_financial_account_service,
 )
+from app.modules.users.entrypoints.api import get_current_user
 
 
 router = APIRouter(prefix="/ai", tags=["AI","AI Orchestrator"])
@@ -34,9 +35,8 @@ def ai_chat(
     category_service: TransactionCategoryService = Depends(
         get_transaction_category_service
     ),
+    current_user=Depends(get_current_user),
 ):
-    current_user_id = 1
-
     orchestrator = FinanceOrchestrator(
         transaction_service=transaction_service,
         account_service=account_service,
@@ -44,6 +44,6 @@ def ai_chat(
     )
 
     return orchestrator.process(
-        user_id=current_user_id,
+        user_id=current_user.id,
         message=payload.message,
     )
