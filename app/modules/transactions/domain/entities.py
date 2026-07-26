@@ -107,6 +107,8 @@ class TransactionResponse(BaseModel):
     from_account_id: Optional[int] = None
     to_account_id: Optional[int] = None
     category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    from_account_name: Optional[str] = None
     type: Optional[str] = None
     amount: Decimal
     transaction_date: Optional[date] = None

@@ -171,6 +171,16 @@ class TransactionService:
             f"Kategori {transaction.category_id}."
         )
 
+    def _add_names(self, transaction):
+        category = self.category_repo.get_by_id(transaction.category_id) if transaction.category_id else None
+        account = self.account_repo.get_by_id(transaction.from_account_id) if transaction.from_account_id else None
+        transaction.category_name = category.name if category else None
+        transaction.from_account_name = account.name if account else None
+        return transaction
+
+    def _add_names_to_list(self, transactions):
+        return [self._add_names(transaction) for transaction in transactions]
+
     def create_transaction(self, data):
         category = self.category_repo.get_by_id(data.category_id)
         if not category:
@@ -200,7 +210,7 @@ class TransactionService:
             ids=[f"transaction-{transaction.id}"]
         )
 
-        return transaction
+        return self._add_names(transaction)
 
     def get_transaction_by_id(
         self,
@@ -213,7 +223,12 @@ class TransactionService:
         )
         if not transaction:
             raise ValueError("Transaction not found")
-        return transaction
+        return self._add_names(transaction)
+
+    def get_transactions(self, user_id: int, limit: int = 100, offset: int = 0):
+        return self._add_names_to_list(
+            self.transaction_repo.get_all_by_user_id(user_id, limit, offset)
+        )
 
     def get_latest_transaction(self, user_id: int):
         transaction = self.transaction_repo.get_latest_by_user_id(
@@ -221,7 +236,7 @@ class TransactionService:
         )
         if not transaction:
             raise ValueError("Transaction not found")
-        return transaction
+        return self._add_names(transaction)
 
     def find_transactions(
         self,
@@ -233,14 +248,14 @@ class TransactionService:
         category_id=None,
         limit: int = 10,
     ):
-        return self.transaction_repo.find_candidates(
+        return self._add_names_to_list(self.transaction_repo.find_candidates(
             user_id=user_id,
             amount=amount,
             transaction_date=transaction_date,
             from_account_id=from_account_id,
             category_id=category_id,
             limit=limit,
-        )
+        ))
 
     def update_transaction(
         self,
@@ -275,7 +290,7 @@ class TransactionService:
             ids=[f"transaction-{transaction.id}"],
         )
 
-        return transaction
+        return self._add_names(transaction)
 
     def delete_transaction(
         self,

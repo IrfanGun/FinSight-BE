@@ -139,6 +139,16 @@ class TransactionRepository:
             .first()
         )
 
+    def get_all_by_user_id(self, user_id: int, limit: int = 100, offset: int = 0):
+        return (
+            self.db.query(TransactionORM)
+            .filter(TransactionORM.user_id == user_id)
+            .order_by(TransactionORM.transaction_date.desc(), TransactionORM.id.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
     def get_latest_by_user_id(self, user_id: int):
         return (
             self.db.query(TransactionORM)

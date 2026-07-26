@@ -1,6 +1,9 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import date
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.modules.ai.service_layer.embedding_service import EmbeddingService
@@ -16,6 +19,7 @@ from app.modules.transactions.domain.entities import (
     FinancialAccountUpdate,
     TransactionCreate,
     TransactionResponse,
+    TransactionUpdate,
     TransactionCategoryCreate,
     TransactionCategoryResponse,
     TransactionCategoryUpdate,
@@ -177,3 +181,64 @@ def create_transaction(
         if "not found" in message:
             raise HTTPException(status_code=404, detail=message)
         raise HTTPException(status_code=400, detail=message)
+
+
+@router.get("/transactions", response_model=List[TransactionResponse])
+def get_transactions(
+    user_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    amount: Optional[float] = None,
+    transaction_date: Optional[date] = None,
+    from_account_id: Optional[int] = None,
+    category_id: Optional[int] = None,
+    service: TransactionService = Depends(get_transaction_service),
+):
+    if any(value is not None for value in (amount, transaction_date, from_account_id, category_id)):
+        return service.find_transactions(
+            user_id=user_id,
+            amount=amount,
+            transaction_date=transaction_date,
+            from_account_id=from_account_id,
+            category_id=category_id,
+            limit=limit,
+        )
+    return service.get_transactions(user_id=user_id, limit=limit, offset=offset)
+
+
+@router.get("/transactions/{transaction_id}", response_model=TransactionResponse)
+def get_transaction(
+    transaction_id: int,
+    user_id: int,
+    service: TransactionService = Depends(get_transaction_service),
+):
+    try:
+        return service.get_transaction_by_id(transaction_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.put("/transactions/{transaction_id}", response_model=TransactionResponse)
+def update_transaction(
+    transaction_id: int,
+    user_id: int,
+    data: TransactionUpdate,
+    service: TransactionService = Depends(get_transaction_service),
+):
+    try:
+        return service.update_transaction(transaction_id, user_id, data)
+    except ValueError as exc:
+        message = str(exc)
+        raise HTTPException(status_code=404 if "not found" in message else 400, detail=message)
+
+
+@router.delete("/transactions/{transaction_id}", response_model=TransactionResponse)
+def delete_transaction(
+    transaction_id: int,
+    user_id: int,
+    service: TransactionService = Depends(get_transaction_service),
+):
+    try:
+        return service.delete_transaction(transaction_id, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
