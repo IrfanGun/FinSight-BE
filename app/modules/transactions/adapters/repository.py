@@ -1,5 +1,5 @@
 #modules/transactions/adapters/repository.py
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
 from app.modules.transactions.adapters.orm import (
@@ -79,6 +79,22 @@ class FinancialAccountRepository:
             .all()
         )
 
+    def get_assets(self, user_id: int):
+        return (
+            self.db.query(FinancialAccountORM)
+            .filter(
+                FinancialAccountORM.user_id == user_id,
+                FinancialAccountORM.is_active.is_(True),
+            )
+            .order_by(FinancialAccountORM.id.desc())
+            .all()
+        )
+
+    def get_asset_proportions(self, user_id: int):
+        return (self.db.query(FinancialAccountORM.type.label("label"), func.sum(FinancialAccountORM.balance).label("amount"))
+                .filter(FinancialAccountORM.user_id == user_id, FinancialAccountORM.is_active.is_(True))
+                .group_by(FinancialAccountORM.type).order_by(func.sum(FinancialAccountORM.balance).desc()).all())
+
     def get_by_id(self, account_id: int):
         return (
             self.db.query(FinancialAccountORM)
@@ -115,6 +131,11 @@ class FinancialAccountRepository:
 
 
 class TransactionRepository:
+    def get_category_proportions(self, user_id: int, transaction_type: str):
+        return (self.db.query(TransactionCategoryORM.name.label("label"), func.sum(TransactionORM.amount).label("amount"))
+                .outerjoin(TransactionCategoryORM, TransactionCategoryORM.id == TransactionORM.category_id)
+                .filter(TransactionORM.user_id == user_id, func.lower(TransactionORM.type) == transaction_type)
+                .group_by(TransactionCategoryORM.name).order_by(func.sum(TransactionORM.amount).desc()).all())
     def __init__(self, db: Session):
         self.db = db
 
@@ -124,6 +145,24 @@ class TransactionRepository:
             .filter(TransactionORM.id == transaction_id)
             .first()
         )
+
+    def get_summary_by_user_id(self, user_id: int, start_date=None, end_date=None):
+        income = func.coalesce(func.sum(case(
+            (func.lower(TransactionORM.type) == "income", TransactionORM.amount),
+            else_=0,
+        )), 0)
+        expense = func.coalesce(func.sum(case(
+            (func.lower(TransactionORM.type) == "expense", TransactionORM.amount),
+            else_=0,
+        )), 0)
+        query = self.db.query(
+            income.label("income"), expense.label("expense")
+        ).filter(TransactionORM.user_id == user_id)
+        if start_date is not None:
+            query = query.filter(TransactionORM.transaction_date >= start_date)
+        if end_date is not None:
+            query = query.filter(TransactionORM.transaction_date < end_date)
+        return query.one()
 
     def get_by_id_and_user_id(
         self,

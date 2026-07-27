@@ -19,6 +19,8 @@ from app.modules.transactions.domain.entities import (
     FinancialAccountUpdate,
     TransactionCreate,
     TransactionResponse,
+    TransactionSummaryResponse,
+    ProportionItemResponse,
     TransactionUpdate,
     TransactionCategoryCreate,
     TransactionCategoryResponse,
@@ -116,6 +118,14 @@ def get_financial_accounts(
     return service.get_all_accounts()
 
 
+@router.get("/finance-accounts/assets", response_model=List[FinancialAccountResponse])
+def get_financial_assets(
+    user_id: int = Query(..., ge=1),
+    service: FinancialAccountService = Depends(get_financial_account_service),
+):
+    return service.get_assets(user_id)
+
+
 @router.get("/finance-accounts/{account_id}", response_model=FinancialAccountResponse)
 def get_financial_account(
     account_id: int,
@@ -204,6 +214,28 @@ def get_transactions(
             limit=limit,
         )
     return service.get_transactions(user_id=user_id, limit=limit, offset=offset)
+
+
+@router.get("/transactions/summary", response_model=TransactionSummaryResponse)
+def get_transaction_summary(
+    user_id: int = Query(..., ge=1),
+    period: str = Query(default="monthly", pattern="^(daily|weekly|monthly|yearly)$"),
+    target_date: Optional[date] = Query(default=None),
+    service: TransactionService = Depends(get_transaction_service),
+):
+    return service.get_summary(user_id, period, target_date)
+
+@router.get("/proportions/expenses", response_model=List[ProportionItemResponse])
+def get_expense_proportions(user_id: int = Query(..., ge=1), service: TransactionService = Depends(get_transaction_service)):
+    return service.get_category_proportions(user_id, "expense")
+
+@router.get("/proportions/incomes", response_model=List[ProportionItemResponse])
+def get_income_proportions(user_id: int = Query(..., ge=1), service: TransactionService = Depends(get_transaction_service)):
+    return service.get_category_proportions(user_id, "income")
+
+@router.get("/proportions/assets", response_model=List[ProportionItemResponse])
+def get_asset_proportions(user_id: int = Query(..., ge=1), service: FinancialAccountService = Depends(get_financial_account_service)):
+    return service.get_asset_proportions(user_id)
 
 
 @router.get("/transactions/{transaction_id}", response_model=TransactionResponse)

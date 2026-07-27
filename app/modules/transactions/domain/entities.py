@@ -117,3 +117,18 @@ class TransactionResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TransactionSummaryResponse(BaseModel):
+    user_id: int
+    period: str
+    start_date: date
+    end_date: date
+    income: Decimal
+    expense: Decimal
+    balance: Decimal
+
+class ProportionItemResponse(BaseModel):
+    label: str
+    amount: Decimal
+    percentage: Decimal

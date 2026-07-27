@@ -7,8 +7,14 @@ from app.modules.transactions.adapters.repository import (
     TransactionCategoryRepository,
     TransactionEmbeddingRepository
 )
-from datetime import date
+from datetime import date, timedelta
 from app.modules.transactions.domain.entities import TransactionUpdate
+
+
+def _proportions(rows):
+    total = sum((row.amount or 0 for row in rows), 0)
+    return [{"label": row.label or "Uncategorized", "amount": row.amount or 0,
+             "percentage": (row.amount or 0) * 100 / total if total else 0} for row in rows]
 
 
 class TransactionCategoryService:
@@ -79,6 +85,12 @@ class FinancialAccountService:
     def get_all_accounts(self):
         return self.account_repo.get_all()
 
+    def get_assets(self, user_id: int):
+        return self.account_repo.get_assets(user_id)
+
+    def get_asset_proportions(self, user_id: int):
+        return _proportions(self.account_repo.get_asset_proportions(user_id))
+
     def get_account_by_id(self, account_id: int):
         account = self.account_repo.get_by_id(account_id)
         if not account:
@@ -148,6 +160,9 @@ class FinancialAccountService:
 
 
 class TransactionService:
+
+    def get_category_proportions(self, user_id: int, transaction_type: str):
+        return _proportions(self.transaction_repo.get_category_proportions(user_id, transaction_type))
     def __init__(
         self,
         transaction_repo: TransactionRepository,
@@ -229,6 +244,38 @@ class TransactionService:
         return self._add_names_to_list(
             self.transaction_repo.get_all_by_user_id(user_id, limit, offset)
         )
+
+    def get_summary(self, user_id: int, period: str = "monthly", target_date: date | None = None):
+        target_date = target_date or date.today()
+        if period == "daily":
+            start_date = target_date
+            end_date = start_date + timedelta(days=1)
+        elif period == "weekly":
+            start_date = target_date - timedelta(days=target_date.weekday())
+            end_date = start_date + timedelta(days=7)
+        elif period == "monthly":
+            start_date = target_date.replace(day=1)
+            end_date = (start_date.replace(year=start_date.year + 1, month=1)
+                        if start_date.month == 12
+                        else start_date.replace(month=start_date.month + 1))
+        elif period == "yearly":
+            start_date = target_date.replace(month=1, day=1)
+            end_date = start_date.replace(year=start_date.year + 1)
+        else:
+            raise ValueError("period must be daily, weekly, monthly, or yearly")
+
+        summary = self.transaction_repo.get_summary_by_user_id(
+            user_id, start_date, end_date
+        )
+        return {
+            "user_id": user_id,
+            "period": period,
+            "start_date": start_date,
+            "end_date": end_date - timedelta(days=1),
+            "income": summary.income,
+            "expense": summary.expense,
+            "balance": summary.income - summary.expense,
+        }
 
     def get_latest_transaction(self, user_id: int):
         transaction = self.transaction_repo.get_latest_by_user_id(
