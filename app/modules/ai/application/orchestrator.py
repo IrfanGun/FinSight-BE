@@ -1,7 +1,9 @@
 # app/modules/ai/application/orchestrator.py
 
 import json
+import re
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -29,6 +31,7 @@ from app.modules.transactions.service_layer.transaction_service import (
     TransactionService,
     TransactionCategoryService,
 )
+from app.modules.ai.adapters.repository import AIConversationRepository
 
 
 
@@ -39,30 +42,64 @@ class FinanceOrchestrator:
         transaction_service: TransactionService,
         account_service: FinancialAccountService,
         category_service: TransactionCategoryService,
+        conversation_repository: AIConversationRepository,
     ) -> None:
         self.llm = GroqProvider()
 
         self.transaction_service = transaction_service
         self.account_service = account_service
         self.category_service = category_service
+        self.conversation_repository = conversation_repository
 
     def process(
         self,
         *,
         user_id: int,
+        conversation_id: int | None,
         message: str,
     ) -> dict[str, Any]:
+        conversation = self.conversation_repository.get_or_create(
+            user_id=user_id, conversation_id=conversation_id
+        )
+        self.conversation_repository.add_message(
+            conversation_id=conversation.id, user_id=user_id,
+            role="user", message=message,
+        )
+
+        history = self.conversation_repository.get_recent_messages(
+            conversation_id=conversation.id,
+            user_id=user_id,
+        )
+        correction = self._parse_correction(message, history)
+        if correction is not None:
+            result = execute_update_transaction(
+                arguments=correction,
+                user_id=user_id,
+                transaction_service=self.transaction_service,
+                account_service=self.account_service,
+                category_service=self.category_service,
+            )
+            return self._save_response(conversation.id, user_id, {
+                "conversation_id": conversation.id,
+                "route": "tool",
+                "tool_name": "update_transaction",
+                **result,
+            })
+
+        llm_messages = [{
+            "role": "system",
+            "content": self._build_system_prompt(),
+        }]
+        for item in history:
+            content = item.message
+            if item.metadata_json and item.metadata_json.get("data"):
+                content += "\nKonteks terstruktur: " + json.dumps(
+                    item.metadata_json["data"], ensure_ascii=False, default=str
+                )
+            llm_messages.append({"role": item.role, "content": content})
+
         response = self.llm.generate(
-        messages=[
-            {
-                "role": "system",
-                "content": self._build_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": message,
-            },
-        ],
+        messages=llm_messages,
         tools=[
             CREATE_TRANSACTION_TOOL,
             UPDATE_TRANSACTION_TOOL,
@@ -74,8 +111,9 @@ class FinanceOrchestrator:
         tool_calls = assistant_message.tool_calls or []
 
         if not tool_calls:
-            return {
+            return self._save_response(conversation.id, user_id, {
                 "success": True,
+                "conversation_id": conversation.id,
                 "route": "chat",
                 "message": (
                     assistant_message.content
@@ -83,7 +121,7 @@ class FinanceOrchestrator:
                 ),
                 "tool_name": None,
                 "data": None,
-            }
+            })
 
         tool_call = tool_calls[0]
         tool_name = tool_call.function.name
@@ -93,8 +131,9 @@ class FinanceOrchestrator:
                 tool_call.function.arguments
             )
         except json.JSONDecodeError:
-            return {
+            return self._save_response(conversation.id, user_id, {
                 "success": False,
+                "conversation_id": conversation.id,
                 "route": "error",
                 "message": (
                     "Groq menghasilkan parameter tool "
@@ -102,7 +141,7 @@ class FinanceOrchestrator:
                 ),
                 "tool_name": tool_name,
                 "data": None,
-            }
+            })
 
         if tool_name == "create_transaction":
             result = execute_create_transaction(
@@ -129,19 +168,56 @@ class FinanceOrchestrator:
                 category_service=self.category_service,
             )
         else:
-            return {
+            return self._save_response(conversation.id, user_id, {
                 "success": False,
+                "conversation_id": conversation.id,
                 "route": "blocked",
                 "message": f"Tool '{tool_name}' tidak diizinkan.",
                 "tool_name": tool_name,
                 "data": None,
-            }
+            })
 
-        return {
+        return self._save_response(conversation.id, user_id, {
+            "conversation_id": conversation.id,
             "route": "tool",
             "tool_name": tool_name,
             **result,
-        }
+        })
+
+    def _save_response(self, conversation_id: int, user_id: int,
+                       response: dict[str, Any]) -> dict[str, Any]:
+        self.conversation_repository.add_message(
+            conversation_id=conversation_id, user_id=user_id,
+            role="assistant", message=response["message"],
+            intent=response.get("tool_name"),
+            metadata={"route": response.get("route"),
+                      "data": response.get("data")},
+        )
+        self.conversation_repository.commit()
+        return response
+
+    @staticmethod
+    def _parse_correction(message: str, history) -> dict[str, Any] | None:
+        text = message.lower().strip()
+        if not re.search(r"\b(maksudnya|ternyata|salah|harusnya)\b", text):
+            return None
+        transaction_id = None
+        for item in reversed(history):
+            data = (item.metadata_json or {}).get("data")
+            if isinstance(data, dict) and data.get("id") is not None:
+                transaction_id = data["id"]
+                break
+        if transaction_id is None:
+            return None
+        match = re.search(r"(?:rp\s*)?([\d.,]+)\s*(rb|ribu|jt|juta)?\b", text)
+        if not match:
+            return None
+        amount = Decimal(match.group(1).replace(".", "").replace(",", "."))
+        if match.group(2) in ("rb", "ribu"):
+            amount *= 1000
+        elif match.group(2) in ("jt", "juta"):
+            amount *= 1000000
+        return {"transaction_id": transaction_id, "amount": amount}
 
     @staticmethod
     def _build_system_prompt() -> str:
@@ -162,6 +238,9 @@ Tugas:
 4. Gunakan delete_transaction jika pengguna ingin menghapus, membatalkan, atau undo transaksi.
 5. Jangan mengatakan transaksi berhasil sebelum tool selesai dijalankan.
 6. Jangan mengarang nama akun.
+7. Untuk transfer atau rekening bank, gunakan account_name "Bank".
+8. Untuk pembayaran tunai, gunakan account_name "Cash".
+9. Untuk dana investasi, gunakan account_name "Investment".
 
 Aturan:
 - "30 ribu" berarti 30000.

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class AIChatRequest(BaseModel):
+    conversation_id: int | None = Field(default=None, ge=1)
     message: str = Field(
         ...,
         min_length=1,
@@ -16,6 +17,7 @@ class AIChatRequest(BaseModel):
 
 class AIChatResponse(BaseModel):
     success: bool
+    conversation_id: int
     route: str
     message: str
     tool_name: str | None = None

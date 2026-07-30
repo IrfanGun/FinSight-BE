@@ -30,10 +30,26 @@ def execute_create_transaction(
         )
 
     except ValidationError as exc:
+        fields = {error["loc"][0] for error in exc.errors()}
+        questions = []
+        if "amount" in fields:
+            questions.append("berapa nominalnya")
+        if "account_name" in fields:
+            questions.append("menggunakan akun apa")
+        if "category_name" in fields:
+            questions.append("masuk kategori apa")
+
+        question = " dan ".join(questions)
         return {
             "success": False,
-            "message": "Parameter transaksi dari LLM tidak valid.",
+            "message": (
+                f"Saya perlu konfirmasi: {question}."
+                if question
+                else "Saya perlu konfirmasi detail transaksi tersebut."
+            ),
             "error_code": "INVALID_TOOL_ARGUMENTS",
+            "requires_clarification": True,
+            "next_action": "CONFIRM_TRANSACTION_DETAILS",
             "details": exc.errors(),
         }
 
@@ -46,10 +62,13 @@ def execute_create_transaction(
         return {
             "success": False,
             "message": (
-                f"Akun '{validated.account_name}' tidak ditemukan."
+                f"Akun '{validated.account_name}' belum ditemukan. "
+                f"Apakah ingin membuat akun/aset '{validated.account_name}'?"
             ),
             "error_code": "ACCOUNT_NOT_FOUND",
             "requires_clarification": True,
+            "next_action": "CREATE_FINANCIAL_ACCOUNT",
+            "data": {"account_name": validated.account_name},
         }
 
     category = category_service.find_category_by_name(
@@ -62,10 +81,13 @@ def execute_create_transaction(
             "success": False,
             "message": (
                 f"Kategori '{validated.category_name}' "
-                "tidak ditemukan."
+                "belum ditemukan. Apakah ingin membuat kategori "
+                f"'{validated.category_name}'?"
             ),
             "error_code": "CATEGORY_NOT_FOUND",
             "requires_clarification": True,
+            "next_action": "CREATE_TRANSACTION_CATEGORY",
+            "data": {"category_name": validated.category_name},
         }
 
     transaction_data = TransactionCreate(

@@ -5,6 +5,53 @@ from sqlalchemy import func, case
 from datetime import datetime
 
 from app.modules.ai.adapters.orm import Intent, IntentExample, AIIntentLog
+from app.modules.transactions.adapters.orm import AIConversationORM, AIMessageORM
+
+
+class AIConversationRepository:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def get_or_create(self, user_id: int, conversation_id: int | None = None):
+        conversation = None
+        if conversation_id is not None:
+            conversation = (
+                self.db.query(AIConversationORM)
+                .filter(AIConversationORM.id == conversation_id,
+                        AIConversationORM.user_id == user_id)
+                .first()
+            )
+        if conversation is None:
+            conversation = AIConversationORM(user_id=user_id)
+            self.db.add(conversation)
+            self.db.flush()
+        return conversation
+
+    def add_message(self, *, conversation_id: int, user_id: int,
+                    role: str, message: str, intent: str | None = None,
+                    metadata: dict | None = None):
+        row = AIMessageORM(
+            conversation_id=conversation_id, user_id=user_id, role=role,
+            message=message, intent=intent, metadata_json=metadata,
+        )
+        self.db.add(row)
+        self.db.flush()
+        return row
+
+    def get_recent_messages(self, *, conversation_id: int, user_id: int,
+                            limit: int = 12):
+        rows = (
+            self.db.query(AIMessageORM)
+            .filter(AIMessageORM.conversation_id == conversation_id,
+                   AIMessageORM.user_id == user_id)
+            .order_by(AIMessageORM.created_at.desc(), AIMessageORM.id.desc())
+            .limit(limit)
+            .all()
+        )
+        return list(reversed(rows))
+
+    def commit(self):
+        self.db.commit()
 
 
 class IntentRepository:

@@ -12,21 +12,21 @@ CREATE_TRANSACTION_TOOL = {
             "type": "object",
             "properties": {
                 "amount": {
-                    "type": "number",
+                    "type": ["number", "null"],
                     "description": (
                         "Nominal transaksi dalam angka penuh. "
                         "Contoh 30 ribu menjadi 30000."
                     ),
                 },
                 "account_name": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": (
                         "Nama akun pembayaran, misalnya Cash, BCA, "
                         "Mandiri, GoPay, atau ShopeePay."
                     ),
                 },
                 "category_name": {
-                    "type": "string",
+                    "type": ["string", "null"],
                     "description": (
                         "Nama kategori transaksi, misalnya Makanan, "
                         "Transportasi, Tagihan, Kesehatan, atau Belanja."

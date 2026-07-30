@@ -153,8 +153,34 @@ class FinancialAccountService:
         name: str,
         user_id: int,
     ):
-        return self.account_repo.get_by_name(
+        account = self.account_repo.get_by_name(
             name=name,
+            user_id=user_id,
+        )
+
+        if account is not None:
+            return account
+
+        # Natural-language aliases commonly produced by the AI.
+        normalized = " ".join(name.lower().strip().split())
+        aliases = {
+            "transfer bank": "Bank",
+            "bank transfer": "Bank",
+            "rekening": "Bank",
+            "rekening bank": "Bank",
+            "via bank": "Bank",
+            "tunai": "Cash",
+            "uang tunai": "Cash",
+            "cash": "Cash",
+            "investasi": "Investment",
+            "investments": "Investment",
+        }
+        canonical_name = aliases.get(normalized)
+        if canonical_name is None:
+            return None
+
+        return self.account_repo.get_by_name(
+            name=canonical_name,
             user_id=user_id,
         )
 
