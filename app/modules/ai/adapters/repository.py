@@ -50,6 +50,72 @@ class AIConversationRepository:
         )
         return list(reversed(rows))
 
+    def get_by_id_with_messages(self, *, conversation_id: int, user_id: int):
+        conversation = (
+            self.db.query(AIConversationORM)
+            .filter(
+                AIConversationORM.id == conversation_id,
+                AIConversationORM.user_id == user_id,
+            )
+            .first()
+        )
+        if conversation is None:
+            return None
+
+        messages = (
+            self.db.query(AIMessageORM)
+            .filter(
+                AIMessageORM.conversation_id == conversation_id,
+                AIMessageORM.user_id == user_id,
+            )
+            .order_by(AIMessageORM.created_at.asc(), AIMessageORM.id.asc())
+            .all()
+        )
+        return conversation, messages
+
+    def get_messages_page(self, *, conversation_id: int, user_id: int,
+                          page: int = 1, page_size: int = 20):
+        conversation_exists = (
+            self.db.query(AIConversationORM.id)
+            .filter(
+                AIConversationORM.id == conversation_id,
+                AIConversationORM.user_id == user_id,
+            )
+            .first()
+        )
+        if conversation_exists is None:
+            return None
+
+        query = self.db.query(AIMessageORM).filter(
+            AIMessageORM.conversation_id == conversation_id,
+            AIMessageORM.user_id == user_id,
+        )
+        total = query.count()
+        messages = (
+            query.order_by(AIMessageORM.created_at.asc(), AIMessageORM.id.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return total, messages
+
+    def get_conversations_page(self, *, user_id: int, page: int = 1,
+                               page_size: int = 20):
+        query = self.db.query(AIConversationORM).filter(
+            AIConversationORM.user_id == user_id
+        )
+        total = query.count()
+        conversations = (
+            query.order_by(
+                AIConversationORM.updated_at.desc(),
+                AIConversationORM.id.desc(),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+            .all()
+        )
+        return total, conversations
+
     def commit(self):
         self.db.commit()
 
